@@ -1,9 +1,8 @@
 // App.js
-// Universal IR Remote - Expo (Managed Workflow)
-// Simpan file ini di root repositori GitHub Anda
-// Jalankan dengan: npx create-expo-app . && npx expo start
+// Universal IR Remote with Packed JSON Support
+// Simpan di GitHub sebagai proyek Expo
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -14,159 +13,236 @@ import {
   Alert,
   Platform,
   TextInput,
+  Clipboard,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ┌──────────────────────────────────────┐
-// │ DATABASE KODE IR (CONTOH SEDERHANA)  │
+// │ CONTOH REMOTE DALAM FORMAT PACKED JSON │
 // └──────────────────────────────────────┘
-const IR_CODES = {
-  'Samsung TV': {
-    POWER: [9000, 4500, 560, 1690, 560, 1690, 560, 560, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 560, 560, 560, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 1690, 560, 560, 560, 169......],
-    VOL_UP: [9000, 4500, 560, 1690, /* ... */],
-    VOL_DOWN: [9000, 4500, 560, 560, /* ... */],
+// Format: { id, name, brand, type, commands: { POWER: [freq, ...pattern], ... } }
+const DEFAULT_REMOTES = [
+  {
+    id: '1',
+    name: 'TV Samsung',
+    brand: 'Samsung',
+    type: 'TV',
+    commands: {
+      POWER: [38000, 9000, 4500, 560, 1690, 560, 1690, 560, 560, 560, 560],
+      VOL_UP: [38000, 9000, 4500, 560, 560, 560, 1690, 560, 560, 560, 1690],
+      VOL_DOWN: [38000, 9000, 4500, 560, 1690, 560, 560, 560, 1690, 560, 560],
+    },
   },
-  'LG TV': {
-    POWER: [9000, 4500, 560, 560, /* pola berbeda */],
-  },
-};
+];
 
-// ┌──────────────────────────────┐
-// │ FUNGSI KIRIM IR (PLACEHOLDER)│
-// └──────────────────────────────┘
-const sendIRSignal = (brand, command) => {
+// ┌──────────────────────┐
+// │ FUNGSI IR (PLACEHOLDER)│
+// └──────────────────────┘
+const sendIRSignal = (commandArray) => {
   if (Platform.OS !== 'android') {
-    Alert.alert('❌ Tidak Didukung', 'IR hanya bekerja di perangkat Android dengan IR Blaster.');
+    Alert.alert('❌ Tidak Didukung', 'IR hanya bekerja di Android dengan IR Blaster.');
     return;
   }
 
-  const codes = IR_CODES[brand];
-  if (!codes || !codes[command]) {
-    Alert.alert('⚠️ Kode Tidak Ditemukan', `Tidak ada kode IR untuk ${brand} - ${command}`);
+  if (!commandArray || commandArray.length < 2) {
+    Alert.alert('⚠️ Data Tidak Valid', 'Pola IR tidak lengkap.');
     return;
   }
 
-  // 🔜 INI TEMPAT KODE NATIVE AKAN DIJALANKAN SETELAH EJECT
-  // Contoh: NativeModules.IRTransmitter.send(38000, codes[command]);
+  const frequency = commandArray[0];
+  const pattern = commandArray.slice(1);
+
+  // 🔜 Setelah eject, ganti dengan:
+  // NativeModules.IRModule.transmit(frequency, pattern);
   Alert.alert(
     '📡 IR Dikirim (Simulasi)',
-    `Merek: ${brand}\nPerintah: ${command}\n\n💡 Untuk fungsi nyata:\n1. Eject Expo\n2. Tambahkan modul native Android\n3. Panggil ConsumerIrManager`,
-    [{ text: 'Mengerti' }]
+    `Frekuensi: ${frequency} Hz\nDurasi: ${pattern.length} pulse\n\n💡 Untuk fungsi nyata: eject Expo & tambahkan native module.`,
+    [{ text: 'OK' }]
   );
 };
 
-// ┌──────────────┐
-// │ KOMPONEN UTAMA│
-// └──────────────┘
+// ┌──────────────────────┐
+// │ KOMPONEN UTAMA       │
+// └──────────────────────┘
 export default function App() {
-  const [remotes, setRemotes] = useState([
-    { id: '1', name: 'TV Ruang Tamu', brand: 'Samsung TV', type: 'TV' },
-    { id: '2', name: 'AC Kamar', brand: 'Generic AC', type: 'AC' },
-  ]);
+  const [remotes, setRemotes] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newRemote, setNewRemote] = useState({ name: '', brand: 'Samsung TV', type: 'TV' });
+  const [newRemote, setNewRemote] = useState({
+    name: '',
+    brand: '',
+    type: 'TV',
+    commands: { POWER: [38000], VOL_UP: [38000], VOL_DOWN: [38000] },
+  });
+  const [jsonInput, setJsonInput] = useState('');
+
+  // Muat dari penyimpanan saat startup
+  useEffect(() => {
+    loadRemotes();
+  }, []);
+
+  const loadRemotes = async () => {
+    try {
+      const json = await AsyncStorage.getItem('ir_remotes');
+      if (json) {
+        setRemotes(JSON.parse(json));
+      } else {
+        setRemotes(DEFAULT_REMOTES);
+        await AsyncStorage.setItem('ir_remotes', JSON.stringify(DEFAULT_REMOTES));
+      }
+    } catch (e) {
+      console.error('Gagal muat remote:', e);
+      setRemotes(DEFAULT_REMOTES);
+    }
+  };
+
+  const saveRemotes = async (updatedRemotes) => {
+    try {
+      await AsyncStorage.setItem('ir_remotes', JSON.stringify(updatedRemotes));
+      setRemotes(updatedRemotes);
+    } catch (e) {
+      Alert.alert('❌ Gagal Simpan', 'Tidak bisa menyimpan ke penyimpanan lokal.');
+    }
+  };
 
   const handleAddRemote = () => {
-    if (!newRemote.name.trim()) {
-      Alert.alert('Nama tidak boleh kosong');
+    if (!newRemote.name.trim() || !newRemote.brand.trim()) {
+      Alert.alert('Nama dan merek harus diisi');
       return;
     }
-    setRemotes([
-      ...remotes,
-      { id: Date.now().toString(), ...newRemote },
-    ]);
-    setNewRemote({ name: '', brand: 'Samsung TV', type: 'TV' });
+    const updated = [...remotes, { ...newRemote, id: Date.now().toString() }];
+    saveRemotes(updated);
+    setNewRemote({ name: '', brand: '', type: 'TV', commands: { POWER: [38000], VOL_UP: [38000], VOL_DOWN: [38000] } });
     setShowAddForm(false);
+  };
+
+  const handleDeleteRemote = (id) => {
+    Alert.alert('Hapus Remote?', 'Apakah Anda yakin?', [
+      { text: 'Batal', style: 'cancel' },
+      { text: 'Hapus', style: 'destructive', onPress: () => saveRemotes(remotes.filter(r => r.id !== id)) },
+    ]);
+  };
+
+  const handleExport = async () => {
+    try {
+      await Clipboard.setStringAsync(JSON.stringify(remotes, null, 2));
+      Alert.alert('✅ Berhasil', 'Data remote disalin ke clipboard!');
+    } catch (e) {
+      Alert.alert('❌ Gagal', 'Tidak bisa menyalin ke clipboard.');
+    }
+  };
+
+  const handleImport = () => {
+    try {
+      const parsed = JSON.parse(jsonInput);
+      if (Array.isArray(parsed)) {
+        saveRemotes(parsed);
+        setJsonInput('');
+        Alert.alert('✅ Berhasil', 'Remote berhasil diimpor!');
+      } else {
+        throw new Error('Bukan array');
+      }
+    } catch (e) {
+      Alert.alert('❌ Format Salah', 'Pastikan JSON berupa array remote yang valid.');
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.title}>Universal IR Remote</Text>
-        <Text style={styles.subtitle}>Kontrol TV, AC, dan perangkat IR lainnya</Text>
+        <Text style={styles.subtitle}>Dukung format JSON terkompresi</Text>
 
-        {/* Tombol Tambah Remote */}
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => setShowAddForm(!showAddForm)}
-        >
-          <Text style={styles.addButtonText}>
-            {showAddForm ? 'Batal' : '➕ Tambah Remote'}
-          </Text>
-        </TouchableOpacity>
+        {/* Aksi */}
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => setShowAddForm(!showAddForm)}>
+            <Text style={styles.actionBtnText}>➕ Tambah</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={handleExport}>
+            <Text style={styles.actionBtnText}>📤 Ekspor</Text>
+          </TouchableOpacity>
+        </View>
 
-        {/* Form Tambah Remote */}
+        {/* Form Tambah */}
         {showAddForm && (
           <View style={styles.form}>
             <TextInput
               style={styles.input}
-              placeholder="Nama Remote (contoh: TV Kamar)"
+              placeholder="Nama (contoh: TV Kamar)"
               value={newRemote.name}
-              onChangeText={(text) => setNewRemote({ ...newRemote, name: text })}
+              onChangeText={(t) => setNewRemote({ ...newRemote, name: t })}
             />
             <TextInput
               style={styles.input}
-              placeholder="Merek (contoh: Samsung TV)"
+              placeholder="Merek (contoh: Samsung)"
               value={newRemote.brand}
-              onChangeText={(text) => setNewRemote({ ...newRemote, brand: text })}
+              onChangeText={(t) => setNewRemote({ ...newRemote, brand: t })}
             />
-            <View style={styles.row}>
-              <TouchableOpacity
-                style={[styles.typeButton, newRemote.type === 'TV' && styles.typeButtonActive]}
-                onPress={() => setNewRemote({ ...newRemote, type: 'TV' })}
-              >
-                <Text style={styles.typeButtonText}>TV</Text>
+            <Text style={styles.label}>Perintah IR (format: frekuensi,pulse1,pulse2,...)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="POWER: 38000,9000,4500,..."
+              value={newRemote.commands.POWER.join(',')}
+              onChangeText={(t) => {
+                const nums = t.split(',').map(n => parseInt(n.trim()) || 0).filter(n => !isNaN(n));
+                setNewRemote({ ...newRemote, commands: { ...newRemote.commands, POWER: nums } });
+              }}
+            />
+            <View style={styles.buttonRow}>
+              <TouchableOpacity style={styles.saveBtn} onPress={handleAddRemote}>
+                <Text style={styles.saveBtnText}>Simpan Remote</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.typeButton, newRemote.type === 'AC' && styles.typeButtonActive]}
-                onPress={() => setNewRemote({ ...newRemote, type: 'AC' })}
-              >
-                <Text style={styles.typeButtonText}>AC</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.typeButton, newRemote.type === 'Other' && styles.typeButtonActive]}
-                onPress={() => setNewRemote({ ...newRemote, type: 'Other' })}
-              >
-                <Text style={styles.typeButtonText}>Lainnya</Text>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowAddForm(false)}>
+                <Text style={styles.cancelBtnText}>Batal</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.saveButton} onPress={handleAddRemote}>
-              <Text style={styles.saveButtonText}>Simpan Remote</Text>
-            </TouchableOpacity>
           </View>
         )}
+
+        {/* Impor JSON */}
+        <View style={styles.importBox}>
+          <Text style={styles.importLabel}>Impor dari JSON:</Text>
+          <TextInput
+            style={styles.textArea}
+            multiline
+            numberOfLines={3}
+            placeholder='[{"id":"1","name":"TV","commands":{"POWER":[38000,9000,4500,...]}}]'
+            value={jsonInput}
+            onChangeText={setJsonInput}
+          />
+          <TouchableOpacity style={styles.importBtn} onPress={handleImport}>
+            <Text style={styles.importBtnText}>📥 Impor</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Daftar Remote */}
         {remotes.map((remote) => (
           <View key={remote.id} style={styles.remoteCard}>
-            <Text style={styles.remoteName}>{remote.name}</Text>
-            <Text style={styles.remoteBrand}>{remote.brand} • {remote.type}</Text>
+            <View style={styles.remoteHeader}>
+              <View>
+                <Text style={styles.remoteName}>{remote.name}</Text>
+                <Text style={styles.remoteBrand}>{remote.brand} • {remote.type}</Text>
+              </View>
+              <TouchableOpacity onPress={() => handleDeleteRemote(remote.id)}>
+                <Text style={styles.deleteBtn}>🗑️</Text>
+              </TouchableOpacity>
+            </View>
             <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={[styles.irBtn, { backgroundColor: '#e53935' }]}
-                onPress={() => sendIRSignal(remote.brand, 'POWER')}
-              >
-                <Text style={styles.btnText}>Power</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.irBtn, { backgroundColor: '#1e88e5' }]}
-                onPress={() => sendIRSignal(remote.brand, 'VOL_UP')}
-              >
-                <Text style={styles.btnText}>Vol +</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.irBtn, { backgroundColor: '#43a047' }]}
-                onPress={() => sendIRSignal(remote.brand, 'VOL_DOWN')}
-              >
-                <Text style={styles.btnText}>Vol -</Text>
-              </TouchableOpacity>
+              {Object.keys(remote.commands).map((cmd) => (
+                <TouchableOpacity
+                  key={cmd}
+                  style={styles.irBtn}
+                  onPress={() => sendIRSignal(remote.commands[cmd])}
+                >
+                  <Text style={styles.btnText}>{cmd}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
         ))}
 
         <Text style={styles.footer}>
-          ℹ️ Catatan: Untuk mengirim sinyal IR sungguhan, proyek ini harus di-eject dari Expo
-          dan ditambahkan modul native Android yang mengakses ConsumerIrManager.
-          {'\n\n'}📱 Hanya bekerja di perangkat Android dengan IR Blaster (Xiaomi, Huawei lama, dll).
+          ℹ️ Format JSON: array objek dengan field `commands` berisi array [frekuensi, pulse1, pulse2, ...]
+          {'\n'}📱 Hanya bekerja di Android dengan IR Blaster setelah eject dari Expo.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -177,70 +253,40 @@ export default function App() {
 // │ STYLES       │
 // └──────────────┘
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f0f2f5' },
-  scroll: { padding: 20, paddingBottom: 60 },
-  title: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', color: '#1a237e', marginBottom: 6 },
-  subtitle: { fontSize: 16, textAlign: 'center', color: '#546e7a', marginBottom: 20 },
-  addButton: {
-    backgroundColor: '#5c6bc0',
-    padding: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  addButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
-  form: {
-    backgroundColor: 'white',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    gap: 12,
-  },
-  input: {
+  container: { flex: 1, backgroundColor: '#f5f7fa' },
+  scroll: { padding: 16, paddingBottom: 60 },
+  title: { fontSize: 26, fontWeight: 'bold', textAlign: 'center', color: '#1a237e', marginBottom: 4 },
+  subtitle: { fontSize: 14, textAlign: 'center', color: '#546e7a', marginBottom: 16 },
+  actionRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
+  actionBtn: { flex: 1, marginHorizontal: 4, padding: 12, backgroundColor: '#5c6bc0', borderRadius: 8, alignItems: 'center' },
+  actionBtnText: { color: 'white', fontWeight: '600' },
+  form: { backgroundColor: 'white', padding: 16, borderRadius: 12, marginBottom: 16, gap: 10 },
+  input: { borderWidth: 1, borderColor: '#ddd', padding: 12, borderRadius: 8, fontSize: 15 },
+  label: { fontSize: 13, color: '#555', marginBottom: 4 },
+  buttonRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  saveBtn: { flex: 1, padding: 12, backgroundColor: '#388e3c', borderRadius: 8, alignItems: 'center' },
+  saveBtnText: { color: 'white', fontWeight: '600' },
+  cancelBtn: { flex: 1, padding: 12, backgroundColor: '#bdbdbd', borderRadius: 8, alignItems: 'center' },
+  cancelBtnText: { color: 'white', fontWeight: '600' },
+  importBox: { backgroundColor: 'white', padding: 16, borderRadius: 12, marginBottom: 20 },
+  importLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: '#333' },
+  textArea: {
     borderWidth: 1,
     borderColor: '#ddd',
-    padding: 12,
-    borderRadius: 8,
-    fontSize: 16,
-  },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  typeButton: {
-    flex: 1,
-    marginHorizontal: 4,
     padding: 10,
     borderRadius: 8,
-    alignItems: 'center',
-    backgroundColor: '#e0e0e0',
-  },
-  typeButtonActive: { backgroundColor: '#7986cb' },
-  typeButtonText: { color: '#000', fontWeight: '600' },
-  saveButton: {
-    backgroundColor: '#388e3c',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  saveButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
-  remoteCard: {
-    backgroundColor: 'white',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  remoteName: { fontSize: 18, fontWeight: 'bold', color: '#263238' },
-  remoteBrand: { fontSize: 14, color: '#607d8b', marginBottom: 12 },
-  buttonRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  irBtn: { flex: 1, marginHorizontal: 4, padding: 14, borderRadius: 10, alignItems: 'center' },
-  btnText: { color: 'white', fontWeight: '600', fontSize: 14 },
-  footer: {
-    marginTop: 30,
     fontSize: 13,
-    color: '#78909c',
-    textAlign: 'center',
-    lineHeight: 20,
+    textAlignVertical: 'top',
+    backgroundColor: '#fafafa',
   },
+  importBtn: { marginTop: 10, padding: 10, backgroundColor: '#0288d1', borderRadius: 8, alignItems: 'center' },
+  importBtnText: { color: 'white', fontWeight: '600' },
+  remoteCard: { backgroundColor: 'white', padding: 16, borderRadius: 12, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
+  remoteHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  remoteName: { fontSize: 17, fontWeight: 'bold', color: '#263238' },
+  remoteBrand: { fontSize: 13, color: '#607d8b' },
+  deleteBtn: { fontSize: 18 },
+  irBtn: { flex: 1, padding: 12, backgroundColor: '#7986cb', borderRadius: 8, alignItems: 'center', marginHorizontal: 4 },
+  btnText: { color: 'white', fontWeight: '600', fontSize: 13 },
+  footer: { marginTop: 20, fontSize: 12, color: '#78909c', textAlign: 'center', lineHeight: 18 },
 });
